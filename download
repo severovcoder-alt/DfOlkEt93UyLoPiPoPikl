@@ -1,0 +1,9 @@
+node_modules/
+.env
+tokens.env
+*.log
+tokens.env  
+apk/*
+!apk/.gitkeep
+VegaApk/*
+!VegaApk/.gitkeep
