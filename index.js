@@ -48,6 +48,18 @@ if (!APP_ID || !APP_CERTIFICATE) {
   );
 }
 
+// Диагностика для Railway: пишем в лог, какие переменные реально видны
+// процессу при старте (сами значения не печатаем — только факт наличия
+// и длину, чтобы не спалить секреты в логах, но при этом убедиться,
+// что Railway действительно прокинул Variables в контейнер).
+console.log('🔎 Проверка переменных окружения при старте:');
+['AGORA_APP_ID', 'AGORA_APP_CERTIFICATE', 'FIREBASE_SERVICE_ACCOUNT', 'PORT'].forEach((key) => {
+  const val = process.env[key];
+  console.log(
+    `   ${key}: ${val ? `есть (длина ${val.length})` : 'ОТСУТСТВУЕТ'}`
+  );
+});
+
 // Простой health-check — удобно для Render/Railway, чтобы видеть, что сервис жив
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/token', '/version', '/vegaVersion', '/matchContacts', '/sendPush', '/apk', '/VegaApk'] });
