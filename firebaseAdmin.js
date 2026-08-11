@@ -66,7 +66,9 @@ async function requireAuth(req, res, next) {
 
   const idToken = match[1];
   try {
+    console.log('[requireAuth] проверяю ID-токен...');
     const decoded = await admin.auth().verifyIdToken(idToken);
+    console.log('[requireAuth] токен валиден, uid =', decoded.uid);
     req.authUser = decoded; // decoded.uid и т.д.
     next();
   } catch (err) {

@@ -32,6 +32,16 @@ app.set('trust proxy', true);
 
 app.use(cors());
 app.use(express.json());
+
+// ВРЕМЕННО: логируем каждый входящий запрос, чтобы понять, доходит ли он
+// вообще до сервера. В проекте не было ни одного request-логгера, поэтому
+// молчание в Deploy Logs ничего не доказывает — сервер логирует только
+// явные ошибки (console.error), а не сам факт получения запроса.
+app.use((req, res, next) => {
+  console.log(`→ ${new Date().toISOString()} ${req.method} ${req.path}`);
+  next();
+});
+
 app.use(matchContactsRouter);
 app.use(pushRouter);
 
