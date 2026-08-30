@@ -1,8 +1,8 @@
 {
-  "version": "1.1.1",
-  "description": "Исправлены критические ошибки в интерфейсе, изменены некоторые элементы интерфейса",
+  "version": "1.0.6",
+  "description": "Исправлены критические ошибки в логике, исправлен интерфейс.",
   "force_update": true,
-  "apk_url": "https://linqosocial.online/apk/linqo-1.1.1.apk",
+  "apk_url": "https://linqosocial.online/apk/linqo-1.0.6.apk",
 
   "VegaChatVersion": "1.0.0",
   "VegaChatDescription": "Первый релиз VegaChat.",

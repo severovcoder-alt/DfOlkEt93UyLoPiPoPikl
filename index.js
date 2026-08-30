@@ -15,9 +15,9 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const { RtcTokenBuilder, RtcRole } = require('agora-token');
 const matchContactsRouter = require('./matchContacts');
 const pushRouter = require('./push');
+const turnCredentialsRouter = require('./turnCredentials');
 
 const app = express();
 
@@ -32,47 +32,21 @@ app.set('trust proxy', true);
 
 app.use(cors());
 app.use(express.json());
-
-// ВРЕМЕННО: логируем каждый входящий запрос, чтобы понять, доходит ли он
-// вообще до сервера. В проекте не было ни одного request-логгера, поэтому
-// молчание в Deploy Logs ничего не доказывает — сервер логирует только
-// явные ошибки (console.error), а не сам факт получения запроса.
-app.use((req, res, next) => {
-  console.log(`→ ${new Date().toISOString()} ${req.method} ${req.path}`);
-  next();
-});
-
 app.use(matchContactsRouter);
 app.use(pushRouter);
+app.use(turnCredentialsRouter);
 
-const APP_ID = process.env.AGORA_APP_ID;
-const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
-
-// Токен живёт час — CallScreen сам обновляет его через onTokenPrivilegeWillExpire
-const TOKEN_EXPIRATION_SECONDS = 3600;
-
-if (!APP_ID || !APP_CERTIFICATE) {
+if (!process.env.TURN_SHARED_SECRET) {
   console.error(
-    '❌ Не заданы AGORA_APP_ID и/или AGORA_APP_CERTIFICATE в переменных окружения. ' +
-    'Сервер запустится, но все запросы на /token будут возвращать ошибку 500.'
+    '❌ Не задана переменная окружения TURN_SHARED_SECRET (тот же секрет, ' +
+    'что static-auth-secret в /etc/turnserver.conf на VPS с coturn). ' +
+    'Сервер запустится, но /turn-credentials будет возвращать ошибку 500.'
   );
 }
 
-// Диагностика для Railway: пишем в лог, какие переменные реально видны
-// процессу при старте (сами значения не печатаем — только факт наличия
-// и длину, чтобы не спалить секреты в логах, но при этом убедиться,
-// что Railway действительно прокинул Variables в контейнер).
-console.log('🔎 Проверка переменных окружения при старте:');
-['AGORA_APP_ID', 'AGORA_APP_CERTIFICATE', 'FIREBASE_SERVICE_ACCOUNT', 'PORT'].forEach((key) => {
-  const val = process.env[key];
-  console.log(
-    `   ${key}: ${val ? `есть (длина ${val.length})` : 'ОТСУТСТВУЕТ'}`
-  );
-});
-
 // Простой health-check — удобно для Render/Railway, чтобы видеть, что сервис жив
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/token', '/version', '/vegaVersion', '/matchContacts', '/sendPush', '/apk', '/VegaApk'] });
+  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/vegaVersion', '/matchContacts', '/sendPush', '/apk', '/VegaApk'] });
 });
 
 // Статическая раздача APK-файлов: кладёшь файл в папку apk/ рядом с
@@ -170,47 +144,6 @@ app.get('/vegaVersion', (req, res) => {
   } catch (err) {
     console.error('Ошибка чтения version.json (VegaChat):', err);
     return res.status(500).json({ error: 'Failed to read version info' });
-  }
-});
-
-// GET /token?channel=<строка>&uid=<число, обычно 0>
-app.get('/token', (req, res) => {
-  const { channel, uid } = req.query;
-
-  if (!APP_ID || !APP_CERTIFICATE) {
-    return res.status(500).json({ error: 'Server misconfigured: missing Agora credentials' });
-  }
-
-  if (!channel || typeof channel !== 'string') {
-    return res.status(400).json({ error: 'Missing required "channel" query param' });
-  }
-
-  // uid=0 в приложении означает "пусть Agora сам назначит числовой uid" —
-  // для токена это валидное и часто используемое значение.
-  const numericUid = uid !== undefined ? Number(uid) : 0;
-  if (Number.isNaN(numericUid)) {
-    return res.status(400).json({ error: '"uid" must be a number' });
-  }
-
-  try {
-    const expirationTimeInSeconds = TOKEN_EXPIRATION_SECONDS;
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
-
-    const token = RtcTokenBuilder.buildTokenWithUid(
-      APP_ID,
-      APP_CERTIFICATE,
-      channel,
-      numericUid,
-      RtcRole.PUBLISHER,
-      privilegeExpiredTs,
-      privilegeExpiredTs
-    );
-
-    return res.json({ token });
-  } catch (err) {
-    console.error('Ошибка генерации токена:', err);
-    return res.status(500).json({ error: 'Failed to generate token' });
   }
 });
 

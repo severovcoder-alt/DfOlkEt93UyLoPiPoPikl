@@ -32,7 +32,6 @@ const { admin, requireAuth } = require('./firebaseAdmin');
 const router = express.Router();
 
 router.post('/sendPush', requireAuth, async (req, res) => {
-  console.log('[sendPush] requireAuth пройден, uid =', req.authUser?.uid);
   try {
     const { token, title, body, data, collapseKey, isCall } = req.body || {};
 
@@ -85,9 +84,7 @@ router.post('/sendPush', requireAuth, async (req, res) => {
     };
 
     try {
-      console.log('[sendPush] отправляю в FCM...');
       const messageId = await admin.messaging().send(message);
-      console.log('[sendPush] FCM ответил, messageId =', messageId);
       return res.json({ ok: true, messageId });
     } catch (err) {
       // Токен протух/невалиден — сообщаем клиенту явным кодом,
