@@ -18,6 +18,7 @@ const cors = require('cors');
 const matchContactsRouter = require('./matchContacts');
 const pushRouter = require('./push');
 const turnCredentialsRouter = require('./turnCredentials');
+const mediaRouter = require('./media');
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use(express.json());
 app.use(matchContactsRouter);
 app.use(pushRouter);
 app.use(turnCredentialsRouter);
+app.use(mediaRouter);
 
 if (!process.env.TURN_SHARED_SECRET) {
   console.error(
@@ -46,7 +48,7 @@ if (!process.env.TURN_SHARED_SECRET) {
 
 // Простой health-check — удобно для Render/Railway, чтобы видеть, что сервис жив
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/vegaVersion', '/matchContacts', '/sendPush', '/apk', '/VegaApk'] });
+  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/vegaVersion', '/matchContacts', '/sendPush', '/apk', '/VegaApk', '/media/upload'] });
 });
 
 // Статическая раздача APK-файлов: кладёшь файл в папку apk/ рядом с
