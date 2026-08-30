@@ -11,6 +11,11 @@
 // AGORA_APP_ID/AGORA_APP_CERTIFICATE не подхватывались на проде.)
 require('dotenv').config();
 
+// Форсируем IPv4 для всех исходящих соединений (fetch, https, firebase-admin и т.д.).
+// На некоторых VPS IPv6 либо не настроен, либо блокируется провайдером —
+// без этого Node может пытаться коннектиться по IPv6 первым и виснуть/таймаутить.
+require('dns').setDefaultResultOrder('ipv4first');
+
 const fs = require('fs');
 const path = require('path');
 const express = require('express');

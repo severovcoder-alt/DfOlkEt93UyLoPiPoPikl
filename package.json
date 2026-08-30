@@ -7,7 +7,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node --dns-result-order=ipv4first index.js"
   },
   "license": "ISC",
   "dependencies": {
