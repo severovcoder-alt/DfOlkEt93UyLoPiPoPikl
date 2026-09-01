@@ -1,6 +1,6 @@
 {
-  "version": "1.0.6",
+  "version": "1.2.1",
   "description": "Исправлены критические ошибки в логике, исправлен интерфейс.",
   "force_update": true,
-  "apk_filename": "linqo-1.0.6.apk"
+  "apk_filename": "linqo-1.2.1.apk"
 }
