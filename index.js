@@ -53,7 +53,7 @@ if (!process.env.TURN_SHARED_SECRET) {
 
 // Простой health-check — удобно для Render/Railway, чтобы видеть, что сервис жив
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/vegaVersion', '/matchContacts', '/sendPush', '/apk', '/VegaApk', '/media/upload'] });
+  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/matchContacts', '/sendPush', '/apk', '/media/upload'] });
 });
 
 // Статическая раздача APK-файлов: кладёшь файл в папку apk/ рядом с
@@ -62,16 +62,10 @@ app.get('/', (req, res) => {
 // (например, через SCP/SFTP или панель хостинга), APK — большой бинарник.
 app.use('/apk', express.static(path.join(__dirname, 'apk')));
 
-// То же самое, но для APK VegaChat — отдельная папка, отдельный сайт
-// скачивания, полностью независимо от Linqo (другое приложение того же
-// владельца сервера). Кладёшь файл в VegaApk/ — он доступен по
-// /VegaApk/<имя файла>.
-app.use('/VegaApk', express.static(path.join(__dirname, 'VegaApk')));
-
-// Раньше здесь были роуты /download и /VegaChat, отдающие HTML-страницы
-// из public/. Сайты переехали на отдельный хостинг (рег.ру) и обращаются
-// сюда только за данными через fetch('/version') / fetch('/vegaVersion')
-// с абсолютным URL этого сервиса — см. README, раздел "Деплой сайтов".
+// Раньше здесь был роут /download, отдающий HTML-страницу из public/.
+// Сайт переехал на отдельный хостинг (рег.ру) и обращается сюда только
+// за данными через fetch('/version') с абсолютным URL этого сервиса —
+// см. README, раздел "Деплой сайтов".
 
 // GET /version — проверка версии приложения.
 //
@@ -122,34 +116,6 @@ app.get('/version', (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка чтения version.json:', err);
-    return res.status(500).json({ error: 'Failed to read version info' });
-  }
-});
-
-// GET /vegaVersion — то же самое, что /version, но для VegaChat.
-// Читает VegaChatVersion/VegaChatDescription/VegaChatForceUpdate/
-// VegaChatApkFilename (или VegaChatApkUrl — см. комментарий выше про
-// apk_url) из того же version.json.
-app.get('/vegaVersion', (req, res) => {
-  try {
-    const raw = fs.readFileSync(VERSION_FILE_PATH, 'utf-8');
-    const data = JSON.parse(raw);
-
-    const apkFilename = data.VegaChatApkFilename ? String(data.VegaChatApkFilename) : '';
-    const apkUrl = data.VegaChatApkUrl
-      ? String(data.VegaChatApkUrl)
-      : (apkFilename
-          ? `${req.protocol}://${req.get('host')}/VegaApk/${encodeURIComponent(apkFilename)}`
-          : '');
-
-    return res.json({
-      version: String(data.VegaChatVersion ?? '0.0.0'),
-      description: String(data.VegaChatDescription ?? ''),
-      force_update: Boolean(data.VegaChatForceUpdate),
-      apk_url: apkUrl,
-    });
-  } catch (err) {
-    console.error('Ошибка чтения version.json (VegaChat):', err);
     return res.status(500).json({ error: 'Failed to read version info' });
   }
 });
