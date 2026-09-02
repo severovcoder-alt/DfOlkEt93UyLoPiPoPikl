@@ -1,4 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────
 //  Linqo Backend Server
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -11,22 +10,22 @@
 // AGORA_APP_ID/AGORA_APP_CERTIFICATE не подхватывались на проде.)
 require('dotenv').config();
 
-// Firebase service account передаётся в .env как FIREBASE_SERVICE_ACCOUNT_B64
-// (base64 от JSON-ключа) — так надёжнее для systemd EnvironmentFile, который
-// не поддерживает многострочные/сложные значения. Тут декодируем обратно
-// в обычный JSON-текст и кладём в FIREBASE_SERVICE_ACCOUNT, который уже
-// ждёт firebaseAdmin.js.
 if (process.env.FIREBASE_SERVICE_ACCOUNT_B64 && !process.env.FIREBASE_SERVICE_ACCOUNT) {
   process.env.FIREBASE_SERVICE_ACCOUNT = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8');
 }
+// Форсируем IPv4 для всех исходящих соединений (fetch, https, firebase-admin и т.д.).
+// На некоторых VPS IPv6 либо не настроен, либо блокируется провайдером —
+// без этого Node может пытаться коннектиться по IPv6 первым и виснуть/таймаутить.
+require('dns').setDefaultResultOrder('ipv4first');
 
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const { RtcTokenBuilder, RtcRole } = require('agora-token');
 const matchContactsRouter = require('./matchContacts');
 const pushRouter = require('./push');
+const turnCredentialsRouter = require('./turnCredentials');
+const mediaRouter = require('./media');
 
 const app = express();
 
@@ -43,23 +42,20 @@ app.use(cors());
 app.use(express.json());
 app.use(matchContactsRouter);
 app.use(pushRouter);
+app.use(turnCredentialsRouter);
+app.use(mediaRouter);
 
-const APP_ID = process.env.AGORA_APP_ID;
-const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
-
-// Токен живёт час — CallScreen сам обновляет его через onTokenPrivilegeWillExpire
-const TOKEN_EXPIRATION_SECONDS = 3600;
-
-if (!APP_ID || !APP_CERTIFICATE) {
+if (!process.env.TURN_SHARED_SECRET) {
   console.error(
-    '❌ Не заданы AGORA_APP_ID и/или AGORA_APP_CERTIFICATE в переменных окружения. ' +
-    'Сервер запустится, но все запросы на /token будут возвращать ошибку 500.'
+    '❌ Не задана переменная окружения TURN_SHARED_SECRET (тот же секрет, ' +
+    'что static-auth-secret в /etc/turnserver.conf на VPS с coturn). ' +
+    'Сервер запустится, но /turn-credentials будет возвращать ошибку 500.'
   );
 }
 
 // Простой health-check — удобно для Render/Railway, чтобы видеть, что сервис жив
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/token', '/version', '/vegaVersion', '/matchContacts', '/sendPush', '/apk', '/VegaApk'] });
+  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/matchContacts', '/sendPush', '/apk', '/media/upload'] });
 });
 
 // Статическая раздача APK-файлов: кладёшь файл в папку apk/ рядом с
@@ -68,16 +64,10 @@ app.get('/', (req, res) => {
 // (например, через SCP/SFTP или панель хостинга), APK — большой бинарник.
 app.use('/apk', express.static(path.join(__dirname, 'apk')));
 
-// То же самое, но для APK VegaChat — отдельная папка, отдельный сайт
-// скачивания, полностью независимо от Linqo (другое приложение того же
-// владельца сервера). Кладёшь файл в VegaApk/ — он доступен по
-// /VegaApk/<имя файла>.
-app.use('/VegaApk', express.static(path.join(__dirname, 'VegaApk')));
-
-// Раньше здесь были роуты /download и /VegaChat, отдающие HTML-страницы
-// из public/. Сайты переехали на отдельный хостинг (рег.ру) и обращаются
-// сюда только за данными через fetch('/version') / fetch('/vegaVersion')
-// с абсолютным URL этого сервиса — см. README, раздел "Деплой сайтов".
+// Раньше здесь был роут /download, отдающий HTML-страницу из public/.
+// Сайт переехал на отдельный хостинг (рег.ру) и обращается сюда только
+// за данными через fetch('/version') с абсолютным URL этого сервиса —
+// см. README, раздел "Деплой сайтов".
 
 // GET /version — проверка версии приложения.
 //
@@ -129,75 +119,6 @@ app.get('/version', (req, res) => {
   } catch (err) {
     console.error('Ошибка чтения version.json:', err);
     return res.status(500).json({ error: 'Failed to read version info' });
-  }
-});
-
-// GET /vegaVersion — то же самое, что /version, но для VegaChat.
-// Читает VegaChatVersion/VegaChatDescription/VegaChatForceUpdate/
-// VegaChatApkFilename (или VegaChatApkUrl — см. комментарий выше про
-// apk_url) из того же version.json.
-app.get('/vegaVersion', (req, res) => {
-  try {
-    const raw = fs.readFileSync(VERSION_FILE_PATH, 'utf-8');
-    const data = JSON.parse(raw);
-
-    const apkFilename = data.VegaChatApkFilename ? String(data.VegaChatApkFilename) : '';
-    const apkUrl = data.VegaChatApkUrl
-      ? String(data.VegaChatApkUrl)
-      : (apkFilename
-          ? `${req.protocol}://${req.get('host')}/VegaApk/${encodeURIComponent(apkFilename)}`
-          : '');
-
-    return res.json({
-      version: String(data.VegaChatVersion ?? '0.0.0'),
-      description: String(data.VegaChatDescription ?? ''),
-      force_update: Boolean(data.VegaChatForceUpdate),
-      apk_url: apkUrl,
-    });
-  } catch (err) {
-    console.error('Ошибка чтения version.json (VegaChat):', err);
-    return res.status(500).json({ error: 'Failed to read version info' });
-  }
-});
-
-// GET /token?channel=<строка>&uid=<число, обычно 0>
-app.get('/token', (req, res) => {
-  const { channel, uid } = req.query;
-
-  if (!APP_ID || !APP_CERTIFICATE) {
-    return res.status(500).json({ error: 'Server misconfigured: missing Agora credentials' });
-  }
-
-  if (!channel || typeof channel !== 'string') {
-    return res.status(400).json({ error: 'Missing required "channel" query param' });
-  }
-
-  // uid=0 в приложении означает "пусть Agora сам назначит числовой uid" —
-  // для токена это валидное и часто используемое значение.
-  const numericUid = uid !== undefined ? Number(uid) : 0;
-  if (Number.isNaN(numericUid)) {
-    return res.status(400).json({ error: '"uid" must be a number' });
-  }
-
-  try {
-    const expirationTimeInSeconds = TOKEN_EXPIRATION_SECONDS;
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
-
-    const token = RtcTokenBuilder.buildTokenWithUid(
-      APP_ID,
-      APP_CERTIFICATE,
-      channel,
-      numericUid,
-      RtcRole.PUBLISHER,
-      privilegeExpiredTs,
-      privilegeExpiredTs
-    );
-
-    return res.json({ token });
-  } catch (err) {
-    console.error('Ошибка генерации токена:', err);
-    return res.status(500).json({ error: 'Failed to generate token' });
   }
 });
 
