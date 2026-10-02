@@ -20,12 +20,14 @@ require('dns').setDefaultResultOrder('ipv4first');
 
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const matchContactsRouter = require('./matchContacts');
 const pushRouter = require('./push');
 const turnCredentialsRouter = require('./turnCredentials');
 const mediaRouter = require('./media');
+const { attachWebSocket } = require('./ws');
 
 const app = express();
 
@@ -55,7 +57,7 @@ if (!process.env.TURN_SHARED_SECRET) {
 
 // Простой health-check — удобно для Render/Railway, чтобы видеть, что сервис жив
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/matchContacts', '/sendPush', '/apk', '/media/upload'] });
+  res.json({ ok: true, service: 'linqo-token-server', endpoints: ['/turn-credentials', '/version', '/matchContacts', '/sendPush', '/apk', '/media/upload', 'ws:/ws'] });
 });
 
 // Статическая раздача APK-файлов: кладёшь файл в папку apk/ рядом с
@@ -123,6 +125,8 @@ app.get('/version', (req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
+const server = http.createServer(app);
+attachWebSocket(server);
+server.listen(PORT, () => {
   console.log(`✅ Linqo token server запущен на порту ${PORT}`);
 });
